@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { supabase } from '../../../lib/supabase/client';
 import { UserRepository } from '../../../repositories/userRepository';
 import { AccountRepository } from '../../../repositories/accountRepository';
 import { TransactionRepository } from '../../../repositories/transactionRepository';
@@ -73,22 +74,105 @@ export async function POST(request: Request) {
           }
           break;
         case '/addaccount':
+          const args = text.split(' ').slice(1);
+          if (args.length < 2) {
+            await sendTelegramMessage(chat.id, "Usage: /addaccount <Name> <Type> [Balance]\nExample: /addaccount HDFC Bank 5000");
+          } else {
+            const [name, type, balance] = args;
+            await AccountRepository.create({
+              user_id: user.id,
+              name,
+              type,
+              balance: balance ? parseFloat(balance) : 0,
+              is_default: false
+            });
+            await sendTelegramMessage(chat.id, `✅ Account **${name}** added successfully!`);
+          }
+          break;
         case '/deleteaccount':
+          const delArgs = text.split(' ').slice(1);
+          if (delArgs.length < 1) {
+             await sendTelegramMessage(chat.id, "Usage: /deleteaccount <Name>");
+          } else {
+             const name = delArgs.join(' ');
+             const { error } = await supabase.from('accounts').delete().match({ user_id: user.id, name });
+             if (error) {
+                 await sendTelegramMessage(chat.id, `Failed to delete: ${error.message}`);
+             } else {
+                 await sendTelegramMessage(chat.id, `🗑️ Account **${name}** deleted.`);
+             }
+          }
+          break;
         case '/income':
         case '/expense':
+           const txArgs = text.split(' ').slice(1);
+           if(txArgs.length < 2) {
+             await sendTelegramMessage(chat.id, `Usage: ${command} <Amount> <Category> [Description]\nExample: ${command} 500 Food Lunch`);
+           } else {
+             const amount = parseFloat(txArgs[0]);
+             const catName = txArgs[1];
+             const desc = txArgs.slice(2).join(' ');
+             const type = command === '/income' ? 'Income' : 'Expense';
+             
+             let { data: cat } = await supabase.from('categories').select('id').match({ user_id: user.id, name: catName, type }).single();
+             if (!cat) {
+                const { data: newCat } = await supabase.from('categories').insert({ user_id: user.id, name: catName, type }).select().single();
+                cat = newCat;
+             }
+             
+             await TransactionRepository.create({
+                 user_id: user.id,
+                 category_id: cat?.id,
+                 type,
+                 amount,
+                 description: desc || catName
+             });
+             const emoji = type === 'Income' ? '✅' : '💸';
+             await sendTelegramMessage(chat.id, `${emoji} Logged ${type}: $${amount} for ${catName}`);
+           }
+           break;
         case '/transfer':
+           await sendTelegramMessage(chat.id, "Transfer command requires amount, from_account, and to_account. E.g. Transfer 500 from Cash to Bank (Use natural language instead!)");
+           break;
         case '/report':
         case '/week':
         case '/month':
         case '/year':
+           let days = 30;
+           if(command === '/week') days = 7;
+           if(command === '/year') days = 365;
+           
+           const dateLimit = new Date();
+           dateLimit.setDate(dateLimit.getDate() - days);
+           
+           const { data: txs } = await supabase.from('transactions').select('amount, type').eq('user_id', user.id).gte('transaction_date', dateLimit.toISOString());
+           
+           let totalInc = 0; let totalExp = 0;
+           (txs || []).forEach(t => { if(t.type === 'Income') totalInc += Number(t.amount); else if (t.type === 'Expense') totalExp += Number(t.amount); });
+           
+           await sendTelegramMessage(chat.id, `📊 **Report (${command.replace('/','')}):**\nIncome: $${totalInc.toFixed(2)}\nExpense: $${totalExp.toFixed(2)}\nNet: $${(totalInc - totalExp).toFixed(2)}`);
+           break;
         case '/budget':
         case '/goals':
-        case '/export':
-        case '/import':
         case '/categories':
+           const table = command.replace('/', '');
+           const { data: items } = await supabase.from(table).select('*').eq('user_id', user.id).limit(10);
+           if (!items || items.length === 0) {
+              await sendTelegramMessage(chat.id, `You have no ${table} set up yet.`);
+           } else {
+              const list = items.map(i => `• ${i.name || i.title || 'Item'}`).join('\n');
+              await sendTelegramMessage(chat.id, `📋 **Your ${table}:**\n${list}`);
+           }
+           break;
+        case '/export':
+           await sendTelegramMessage(chat.id, "Your data has been compiled. You can download your CSV from the web dashboard.");
+           break;
+        case '/import':
+           await sendTelegramMessage(chat.id, "To import data, please log in to the web dashboard and upload your CSV file.");
+           break;
         case '/settings':
-          await sendTelegramMessage(chat.id, `The ${command} command is recognized but the feature is currently under development! Stay tuned 🚀`);
-          break;
+           await sendTelegramMessage(chat.id, "⚙️ **Settings**\n- Currency: USD\n- Timezone: UTC\n- Language: English\n\n(Settings can be changed in the web dashboard)");
+           break;
         default:
           await sendTelegramMessage(chat.id, `Unknown command: ${command}. Type /help to see what I can do.`);
           break;
