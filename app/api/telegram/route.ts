@@ -39,8 +39,39 @@ export async function POST(request: Request) {
     }
 
     // Handle commands
-    if (text.startsWith('/start')) {
-      await sendTelegramMessage(chat.id, `Welcome back ${from.first_name}! Try saying: "Bought lunch for 15"`);
+    if (text.startsWith('/')) {
+      const command = text.split(' ')[0].toLowerCase();
+
+      switch (command) {
+        case '/start':
+          await sendTelegramMessage(chat.id, `Welcome back ${from.first_name}! You can tell me your expenses like: "Bought lunch for 15" or use the menu for more options.`);
+          break;
+        case '/help':
+          await sendTelegramMessage(chat.id, `🤖 **Finance Bot Help**\n\nYou can talk to me naturally!\nExamples:\n- "Spent 250 for lunch"\n- "Salary 7000"\n- "Transfer 300 to Savings"\n\nUse the menu to see all available commands.`);
+          break;
+        case '/accounts':
+        case '/addaccount':
+        case '/deleteaccount':
+        case '/income':
+        case '/expense':
+        case '/transfer':
+        case '/report':
+        case '/today':
+        case '/week':
+        case '/month':
+        case '/year':
+        case '/budget':
+        case '/goals':
+        case '/export':
+        case '/import':
+        case '/categories':
+        case '/settings':
+          await sendTelegramMessage(chat.id, `The ${command} command is recognized but the feature is currently under development! Stay tuned 🚀`);
+          break;
+        default:
+          await sendTelegramMessage(chat.id, `Unknown command: ${command}. Type /help to see what I can do.`);
+          break;
+      }
       return NextResponse.json({ status: 'ok' });
     }
 
