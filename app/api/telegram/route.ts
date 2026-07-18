@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { UserRepository } from '../../../repositories/userRepository';
+import { AccountRepository } from '../../../repositories/accountRepository';
+import { TransactionRepository } from '../../../repositories/transactionRepository';
 import { parseTransactionMessage } from '../../../lib/ai/parser';
 import { TransactionService } from '../../../services/transactionService';
 
@@ -50,13 +52,32 @@ export async function POST(request: Request) {
           await sendTelegramMessage(chat.id, `🤖 **Finance Bot Help**\n\nYou can talk to me naturally!\nExamples:\n- "Spent 250 for lunch"\n- "Salary 7000"\n- "Transfer 300 to Savings"\n\nUse the menu to see all available commands.`);
           break;
         case '/accounts':
+          const accounts = await AccountRepository.findByUserId(user.id);
+          if (accounts.length === 0) {
+            await sendTelegramMessage(chat.id, "You don't have any accounts set up yet. Use /addaccount to create one.");
+          } else {
+            const accList = accounts.map(a => `💳 **${a.name}** (${a.type}): $${a.balance}`).join('\n');
+            await sendTelegramMessage(chat.id, `🏦 **Your Accounts:**\n\n${accList}`);
+          }
+          break;
+        case '/today':
+          const recentTx = await TransactionRepository.getRecentByUserId(user.id, 5);
+          if (recentTx.length === 0) {
+            await sendTelegramMessage(chat.id, "No recent transactions found for today.");
+          } else {
+            const txList = recentTx.map(t => {
+              const emoji = t.type === 'Income' ? '✅' : '💸';
+              return `${emoji} $${t.amount} - ${t.description || t.type}`;
+            }).join('\n');
+            await sendTelegramMessage(chat.id, `📅 **Recent Transactions:**\n\n${txList}`);
+          }
+          break;
         case '/addaccount':
         case '/deleteaccount':
         case '/income':
         case '/expense':
         case '/transfer':
         case '/report':
-        case '/today':
         case '/week':
         case '/month':
         case '/year':
